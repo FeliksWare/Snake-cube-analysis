@@ -1,4 +1,4 @@
-CFLAGS = -std=c99 -pedantic -Wall -Wextra
+CFLAGS = -std=c99 -pedantic -Wall -Wextra -O2
 LDFLAGS =
 
 .PHONY: all clean
