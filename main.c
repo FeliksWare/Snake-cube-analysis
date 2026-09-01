@@ -1,9 +1,12 @@
+// Bug: 52055 should be 51704
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
@@ -17,6 +20,8 @@
 #define NEG_MASK  (1 << 3)
 
 #define DIRECTION_COUNT (6)
+
+#define SOLUTION_LENGTH (26)
 
 typedef uint32_t Snake; // 25 bits
 
@@ -47,7 +52,7 @@ typedef struct {
 } Grid;
 
 typedef struct {
-    uint8_t directions[26];
+    uint8_t directions[SOLUTION_LENGTH];
 } Solution;
 
 typedef struct {
@@ -165,6 +170,17 @@ size_t count_snakes(void) {
 
     for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
         if (!snake_valid(snake)) continue;
+        count++;
+    }
+
+    return count;
+}
+
+int snake_straight_count(Snake snake) {
+    int count = 0;
+
+    for (int i = 0; i < 25; i++) {
+        if (snake_get(snake, i)) continue;
         count++;
     }
 
@@ -320,17 +336,37 @@ bool is_snake_solution_possible(Grid grid) {
 //////////////
 
 void print_solution(Solution solution) {
-    for (size_t i = 0; i < ARRAY_LENGTH(solution.directions); i++) {
+    for (size_t i = 0; i < SOLUTION_LENGTH; i++) {
         printf("%s ", direction_to_string(solution.directions[i]));
     }
     printf("\n");
 }
 
-bool solution_equal(Solution a, Solution b) {
-    uint8_t a_to_b[6] = {0};
-    uint8_t b_to_a[6] = {0};
+void print_solution_unique(Solution solution) {
+    int directions[DIRECTION_COUNT];
+    int count = 0;
 
-    for (size_t i = 0; i < ARRAY_LENGTH(a.directions); i++) {
+    for (int i = 0; i < DIRECTION_COUNT; i++) {
+        directions[i] = -1;
+    }
+
+    for (size_t i = 0; i < SOLUTION_LENGTH; i++) {
+        size_t index = direction_to_index(solution.directions[i]);
+
+        if (directions[index] == -1) {
+            directions[index] = count++;
+        }
+
+        printf("%d", directions[index]);
+    }
+    printf("\n");
+}
+
+bool solution_equal(Solution a, Solution b) {
+    uint8_t a_to_b[DIRECTION_COUNT] = {0};
+    uint8_t b_to_a[DIRECTION_COUNT] = {0};
+
+    for (size_t i = 0; i < SOLUTION_LENGTH; i++) {
         size_t index_a = direction_to_index(a.directions[i]);
         size_t index_b = direction_to_index(b.directions[i]);
 
@@ -389,6 +425,12 @@ void print_solution_list(const SolutionList *list) {
     }
 }
 
+void print_solution_list_unique(const SolutionList *list) {
+    for (size_t i = 0; i < list->count; i++) {
+        print_solution_unique(list->elements[i]);
+    }
+}
+
 void solution_list_make_unique(SolutionList *list) {
     for (size_t i = 0; i + 1 < list->count; i++) {
         size_t j = i;
@@ -413,6 +455,8 @@ void solution_list_make_unique(SolutionList *list) {
 
 SolutionTree* new_solution_tree(Snake snake) {
     SolutionTree *tree = malloc(sizeof(*tree));
+    assert(tree != NULL);
+
     *tree = (SolutionTree){
         .left = NULL,
         .right = NULL,
@@ -421,6 +465,16 @@ SolutionTree* new_solution_tree(Snake snake) {
     };
 
     return tree;
+}
+
+void free_solution_tree(SolutionTree **tree) {
+    if (*tree == NULL) return;
+
+    free_solution_tree(&(*tree)->left);
+    free_solution_tree(&(*tree)->right);
+    free_solution_list(&(*tree)->list);
+    free(*tree);
+    *tree = NULL;
 }
 
 void solution_tree_add(SolutionTree **root, Snake snake, Solution solution) {
@@ -453,6 +507,14 @@ SolutionList* solution_tree_get(SolutionTree *root, Snake snake) {
     }
 
     return NULL;
+}
+
+void solution_tree_make_unique(SolutionTree *root) {
+    if (root == NULL) return;
+
+    solution_list_make_unique(&root->list);
+    solution_tree_make_unique(root->left);
+    solution_tree_make_unique(root->right);
 }
 
 //////////////
@@ -519,8 +581,9 @@ void solve_snake_impl(SolutionList *list, Solution solution, Grid grid, Axis sym
         return;
     }
 
+    symmetry = grid_symmetry(grid, symmetry, x, y, z);
+
     if (snake_get(snake, pos)) {
-        symmetry = grid_symmetry(grid, symmetry, x, y, z);
         Axis axis = NO_AXIS;
 
         for (size_t i = 0; i < DIRECTION_COUNT; i++) {
@@ -549,6 +612,108 @@ void solve_snake(SolutionList *list, Snake snake) {
     solve_snake_impl(list, solution, grid, AXIS_MASK, snake, 0, 2, 2, 2, X_POS);
 }
 
+void fill_grid_all_impl(SolutionTree **tree, Solution solution, Grid grid, Snake snake, int pos, int x, int y, int z, Direction direction) {
+    solution.directions[pos] = direction;
+    if (snake > flip_snake(snake)) {
+        assert(!snake_valid(snake));
+        return;
+    }
+    move_direction(direction, &x, &y, &z);
+    if (!grid_valid_pos(x, y, z)) return;
+    if (grid_get(grid, x, y, z)) return;
+    grid_set(&grid, x, y, z);
+
+    if (!is_snake_solution_possible(grid)) return;
+
+    if (pos == 25) {
+        assert(snake_valid(snake));
+        solution_tree_add(tree, snake, solution);
+        return;
+    }
+
+    fill_grid_all_impl(tree, solution, grid, snake, pos + 1, x, y, z, direction);
+
+    for (size_t i = 0; i < DIRECTION_COUNT; i++) {
+        Direction next_direction = index_to_direction(i);
+        Axis next_axis = next_direction & AXIS_MASK;
+
+        if ((direction & next_axis) == 0) {
+            fill_grid_all_impl(tree, solution, grid, snake_set(snake, pos, 1), pos + 1, x, y, z, next_direction);
+        }
+    }
+}
+
+void fill_grid_all(SolutionTree **tree) {
+    Solution solution;
+    Grid grid;
+    Snake snake = 0;
+
+    init_grid(&grid);
+    grid_set(&grid, 2, 2, 2);
+
+    fill_grid_impl(tree, solution, grid, AXIS_MASK, snake, 0, 2, 2, 2, X_POS);
+}
+
+void solve_snake_all_impl(SolutionList *list, Solution solution, Grid grid, Snake snake, int pos, int x, int y, int z, Direction direction) {
+    solution.directions[pos] = direction;
+    move_direction(direction, &x, &y, &z);
+    if (!grid_valid_pos(x, y, z)) return;
+    if (grid_get(grid, x, y, z)) return;
+    grid_set(&grid, x, y, z);
+
+    if (!is_snake_solution_possible(grid)) return;
+
+    if (pos == 25) {
+        solution_list_push(list, solution);
+        return;
+    }
+
+    if (snake_get(snake, pos)) {
+        for (size_t i = 0; i < DIRECTION_COUNT; i++) {
+            Direction next_direction = index_to_direction(i);
+            Axis next_axis = next_direction & AXIS_MASK;
+
+            if ((direction & next_axis) == 0) {
+                solve_snake_all_impl(list, solution, grid, snake_set(snake, pos, 1), pos + 1, x, y, z, next_direction);
+            }
+        }
+    } else {
+        solve_snake_all_impl(list, solution, grid, snake, pos + 1, x, y, z, direction);
+    }
+}
+
+void solve_snake_all(SolutionList *list, Snake snake) {
+    assert(snake_valid(snake));
+
+    Solution solution;
+    Grid grid;
+    
+    init_grid(&grid);
+    grid_set(&grid, 2, 2, 2);
+
+    solve_snake_all_impl(list, solution, grid, snake, 0, 2, 2, 2, X_POS);
+}
+
+bool increment_solution(Solution *solution, size_t i) {
+    assert(i < SOLUTION_LENGTH);
+
+    for (; i < SOLUTION_LENGTH; i++) {
+        if (solution->directions[i] == index_to_direction(DIRECTION_COUNT - 1)) {
+            if (i + 1 == SOLUTION_LENGTH) return false;
+            solution->directions[i] = index_to_direction(0);
+        } else {
+            solution->directions[i] = index_to_direction(direction_to_index(solution->directions[i]) + 1);
+            break;
+        }
+    }
+
+    return true;
+}
+
+//////////
+// TESTS //
+//////////
+
 bool TEST_flip_snake(void) {
     for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
         if (flip_snake(snake) != flip_snake_naive(snake)) return false;
@@ -557,7 +722,90 @@ bool TEST_flip_snake(void) {
     return true;
 }
 
-void solutions(void) {
+bool TEST_same_solution_count(void) {
+    SolutionTree *tree = NULL;
+    fill_grid(&tree);
+
+    for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
+        if (!snake_valid(snake)) continue;
+
+        SolutionList a = {0};
+        solve_snake(&a, snake);
+        size_t a_count = a.count;
+        free_solution_list(&a);
+
+        SolutionList *b = solution_tree_get(tree, snake);
+
+        if (b == NULL) {
+            if (a_count == 0) continue;
+        } else if (b->count == a_count) {
+            continue;
+        }
+
+        free_solution_tree(&tree);
+        free_solution_list(&a);
+        return false;
+    }
+
+    free_solution_tree(&tree);
+    return true;
+}
+
+bool TEST_symmetry(void) {
+    SolutionTree *tree_a = NULL;
+    fill_grid_all(&tree_a);
+    solution_tree_make_unique(tree_a);
+
+    SolutionTree *tree_b = NULL;
+    fill_grid(&tree_b);
+
+    for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
+        if (!snake_valid(snake)) continue;
+
+        SolutionList *list_a = solution_tree_get(tree_a, snake);
+        SolutionList *list_b = solution_tree_get(tree_b, snake);
+
+        if (list_a == NULL && list_b == NULL) continue;
+        if (list_a != NULL && list_b != NULL && list_a->count == list_b->count) continue;
+
+        free_solution_tree(&tree_a);
+        free_solution_tree(&tree_b);
+        return false;
+    }
+
+    free_solution_tree(&tree_a);
+    free_solution_tree(&tree_b);
+    return true;
+}
+
+//////////////
+// COMMANDS //
+//////////////
+
+void test_command(void) {
+    struct {
+        const char *name;
+        bool (*test)(void);
+    } tests[] = {
+        {"flip snake", TEST_flip_snake},
+        {"same solution count", TEST_same_solution_count},
+        {"symmetry", TEST_symmetry},
+    };
+
+    for (size_t i = 0; i < ARRAY_LENGTH(tests); i++) {
+        bool passed = tests[i].test();
+
+        if (passed) {
+            printf("[PASSED] ");
+        } else {
+            printf("[FAILED] ");
+        }
+
+        printf("%s\n", tests[i].name);
+    }
+}
+
+void solutions_command(void) {
     SolutionTree *tree = NULL;
     fill_grid(&tree);
     
@@ -574,15 +822,148 @@ void solutions(void) {
         printf("\n");
         print_solution_list(list);
     }
+
+    free_solution_tree(&tree);
+}
+
+void compare_command(void) {
+    SolutionTree *tree = NULL;
+    fill_grid(&tree);
+    
+    for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
+        if (!snake_valid(snake)) continue;
+
+        SolutionList *list = solution_tree_get(tree, snake);
+        if (list == NULL) continue;
+
+        print_solution_list_unique(list);
+    }
+
+    free_solution_tree(&tree);
+}
+
+void report_command(bool palindrome, bool not_palindrome) {
+    SolutionTree *tree = NULL;
+    fill_grid(&tree);
+
+    int max_straights = INT_MIN;
+    size_t max_solutions = 0;
+
+    for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
+        if (!snake_valid(snake)) continue;
+        if (palindrome && snake != flip_snake(snake)) continue;
+        if (not_palindrome && snake == flip_snake(snake)) continue;
+
+        SolutionList *list = solution_tree_get(tree, snake);
+        if (list == NULL) continue;
+
+        int straight_count = snake_straight_count(snake);
+
+        if (list->count > max_solutions) max_solutions = list->count;
+        if (straight_count > max_straights) max_straights = straight_count;
+    }
+
+    int *table = calloc((max_solutions + 3) * (max_straights + 3), sizeof(*table));
+    assert(table != NULL);
+
+    for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
+        if (!snake_valid(snake)) continue;
+        if (palindrome && snake != flip_snake(snake)) continue;
+        if (not_palindrome && snake == flip_snake(snake)) continue;
+
+        SolutionList *list = solution_tree_get(tree, snake);
+        if (list == NULL) continue;
+
+        size_t solution_count = list->count;
+        int straight_count = snake_straight_count(snake);
+
+        table[(max_straights + 3) * solution_count + straight_count] += 1;
+
+        table[(max_straights + 3) * solution_count + (max_straights + 1)] += 1;
+        table[(max_straights + 3) * solution_count + (max_straights + 2)] += solution_count;
+
+        table[(max_straights + 3) * (max_solutions + 1) + straight_count] += 1;
+        table[(max_straights + 3) * (max_solutions + 2) + straight_count] += solution_count;
+
+        table[(max_straights + 3) * (max_solutions + 1) + (max_straights + 1)] += 1;
+        table[(max_straights + 3) * (max_solutions + 2) + (max_straights + 2)] += solution_count;
+    }
+
+    printf("       ");
+    for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
+        if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
+        printf("% 7d", straight_count);
+    }
+    printf(" Snakes");
+    printf("  Total");
+    printf("\n");
+
+    for (size_t solution_count = 0; solution_count <= max_solutions; solution_count++) {
+        if (table[(max_straights + 3) * solution_count + (max_straights + 1)] == 0) continue;
+        printf("% 7d", (int)solution_count);
+
+        for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
+            if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
+            printf("% 7d", table[(max_straights + 3) * solution_count + straight_count]);
+        }
+        printf("% 7d", table[(max_straights + 3) * solution_count + (max_straights + 1)]);
+        printf("% 7d", table[(max_straights + 3) * solution_count + (max_straights + 2)]);
+        printf("\n");
+    }
+
+    printf(" Snakes");
+    for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
+        if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
+        printf("% 7d", table[(max_straights + 3) * (max_solutions + 1) + straight_count]);
+    }
+    printf("% 7d", table[(max_straights + 3) * (max_solutions + 1) + (max_straights + 1)]);
+    printf("      -");
+    printf("\n");
+
+    printf("  Total");
+    for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
+        if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
+        printf("% 7d", table[(max_straights + 3) * (max_solutions + 2) + straight_count]);
+    }
+    printf("      -");
+    printf("% 7d", table[(max_straights + 3) * (max_solutions + 2) + (max_straights + 2)]);
+    printf("\n");
+
+    free_solution_tree(&tree);
+    free(table);
+}
+
+void usage(const char *program) {
+    fprintf(stderr, "Usage: %s [Command]\n", program);
+    fprintf(stderr, "Command:\n");
+    fprintf(stderr, "    test         Run some regression tests\n");
+    fprintf(stderr, "    solutions    Print all the solutions to all solvable snakes\n");
+    fprintf(stderr, "    compare      Print solutions in a format that is easy to compare\n");
+    fprintf(stderr, "    report       Print a table of all solutions\n");
 }
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
+        usage(argv[0]);
         return 1;
     }
 
-    if (strcmp(argv[1], "solutions") == 0) {
-        solutions();
+    if (strcmp(argv[1], "test") == 0) {
+        test_command();
+    } else if (strcmp(argv[1], "solutions") == 0) {
+        solutions_command();
+    } else if (strcmp(argv[1], "compare") == 0) {
+        compare_command();
+    } else if (strcmp(argv[1], "report") == 0) {
+        printf("# All\n\n");
+        report_command(false, false);
+        printf("\n# None palindromic\n\n");
+        report_command(false, true);
+        printf("\n# Palindromic\n\n");
+        report_command(true, false);
+    } else {
+        fprintf(stderr, "ERROR: unkown command '%s'\n", argv[1]);
+        usage(argv[0]);
     }
 
     return 0;
