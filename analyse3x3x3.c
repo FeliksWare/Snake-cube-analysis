@@ -1,5 +1,3 @@
-// Bug: 52055 should be 51704
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -187,6 +185,10 @@ int snake_straight_count(Snake snake) {
     return count;
 }
 
+bool is_snake_palindrome(Snake snake) {
+    return snake == flip_snake(snake);
+}
+
 ///////////////
 // DIRECTION //
 ///////////////
@@ -362,7 +364,7 @@ void print_solution_unique(Solution solution) {
     printf("\n");
 }
 
-bool solution_equal(Solution a, Solution b) {
+bool solution_equal_impl(Solution a, Solution b) {
     uint8_t a_to_b[DIRECTION_COUNT] = {0};
     uint8_t b_to_a[DIRECTION_COUNT] = {0};
 
@@ -384,6 +386,24 @@ bool solution_equal(Solution a, Solution b) {
     }
 
     return true;
+}
+
+bool solution_equal(Solution a, Solution b) {
+    if (solution_equal_impl(a, b)) return true;
+
+    size_t l = 0;
+    size_t r = SOLUTION_LENGTH - 1;
+
+    while (l < r) {
+        Direction t = b.directions[l];
+        b.directions[l] = b.directions[r];
+        b.directions[r] = t;
+
+        l++;
+        r--;
+    }
+
+    return solution_equal_impl(a, b);
 }
 
 ///////////////////
@@ -536,7 +556,19 @@ void fill_grid_impl(SolutionTree **tree, Solution solution, Grid grid, Axis symm
 
     if (pos == 25) {
         assert(snake_valid(snake));
-        solution_tree_add(tree, snake, solution);
+        if (!is_snake_palindrome(snake)) {
+            solution_tree_add(tree, snake, solution);
+        } else {
+            SolutionList *list = solution_tree_get(*tree, snake);
+
+            if (list != NULL) {
+                for (size_t i = 0; i < list->count; i++) {
+                    if (solution_equal(list->elements[i], solution)) return;
+                }
+            }
+
+            solution_tree_add(tree, snake, solution);
+        }
         return;
     }
 
@@ -577,7 +609,17 @@ void solve_snake_impl(SolutionList *list, Solution solution, Grid grid, Axis sym
     if (!is_snake_solution_possible(grid)) return;
 
     if (pos == 25) {
-        solution_list_push(list, solution);
+        if (!is_snake_palindrome(snake)) {
+            solution_list_push(list, solution);
+        } else {
+            if (list != NULL) {
+                for (size_t i = 0; i < list->count; i++) {
+                    if (solution_equal(list->elements[i], solution)) return;
+                }
+            }
+
+            solution_list_push(list, solution);
+        }
         return;
     }
 
@@ -651,7 +693,7 @@ void fill_grid_all(SolutionTree **tree) {
     init_grid(&grid);
     grid_set(&grid, 2, 2, 2);
 
-    fill_grid_impl(tree, solution, grid, AXIS_MASK, snake, 0, 2, 2, 2, X_POS);
+    fill_grid_all_impl(tree, solution, grid, snake, 0, 2, 2, 2, X_POS);
 }
 
 void solve_snake_all_impl(SolutionList *list, Solution solution, Grid grid, Snake snake, int pos, int x, int y, int z, Direction direction) {
@@ -692,22 +734,6 @@ void solve_snake_all(SolutionList *list, Snake snake) {
     grid_set(&grid, 2, 2, 2);
 
     solve_snake_all_impl(list, solution, grid, snake, 0, 2, 2, 2, X_POS);
-}
-
-bool increment_solution(Solution *solution, size_t i) {
-    assert(i < SOLUTION_LENGTH);
-
-    for (; i < SOLUTION_LENGTH; i++) {
-        if (solution->directions[i] == index_to_direction(DIRECTION_COUNT - 1)) {
-            if (i + 1 == SOLUTION_LENGTH) return false;
-            solution->directions[i] = index_to_direction(0);
-        } else {
-            solution->directions[i] = index_to_direction(direction_to_index(solution->directions[i]) + 1);
-            break;
-        }
-    }
-
-    return true;
 }
 
 //////////
@@ -828,7 +854,8 @@ void solutions_command(void) {
 
 void compare_command(void) {
     SolutionTree *tree = NULL;
-    fill_grid(&tree);
+    fill_grid_all(&tree);
+    solution_tree_make_unique(tree);
     
     for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
         if (!snake_valid(snake)) continue;

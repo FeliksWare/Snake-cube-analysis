@@ -3,16 +3,13 @@ LDFLAGS =
 
 .PHONY: all clean
 
-SRC = main.c
-OBJ = ${SRC:.c=.o}
+all: analyse3x3x3
 
-all: main
-
-main: $(OBJ)
+analyse3x3x3: analyse3x3x3.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 clean:
-	rm -f main $(OBJ)
+	rm -f analyse3x3x3 analyse3x3x3.o
