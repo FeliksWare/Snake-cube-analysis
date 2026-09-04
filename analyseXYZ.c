@@ -654,7 +654,7 @@ void report_command(void) {
 
     printf("# All\n\n");
     print_table(tree, false, false);
-    printf("\n# None palindromic\n\n");
+    printf("\n# Non-palindromic\n\n");
     print_table(tree, false, true);
     printf("\n# Palindromic\n\n");
     print_table(tree, true, false);

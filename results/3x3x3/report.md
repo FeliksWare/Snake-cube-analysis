@@ -83,7 +83,7 @@
 |Total Snakes|24|235|1037|2563|3444|2674|1159|303|46|2|11487|-|
 |Total Solutions|486|3464|9669|14425|13066|7343|2583|586|80|2|-|51704|
 
-# None palindromic
+# Non-palindromic
 
 |Solutions|2|3|4|5|6|7|8|9|10|11|Total Snakes|Total Solutions|
 |-:|-:|-:|-:|-:|-:|-:|-:|-:|-:|-:|-:|-:|
