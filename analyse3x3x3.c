@@ -736,9 +736,9 @@ void solve_snake_all(SolutionList *list, Snake snake) {
     solve_snake_all_impl(list, solution, grid, snake, 0, 2, 2, 2, X_POS);
 }
 
-//////////
+///////////
 // TESTS //
-//////////
+///////////
 
 bool TEST_flip_snake(void) {
     for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
@@ -869,17 +869,14 @@ void compare_command(void) {
     free_solution_tree(&tree);
 }
 
-void report_command(bool palindrome, bool not_palindrome) {
-    SolutionTree *tree = NULL;
-    fill_grid(&tree);
-
-    int max_straights = INT_MIN;
+void print_table(SolutionTree *tree, bool palindrome, bool non_palindrome) {
+    int max_straights = 0;
     size_t max_solutions = 0;
 
     for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
         if (!snake_valid(snake)) continue;
         if (palindrome && snake != flip_snake(snake)) continue;
-        if (not_palindrome && snake == flip_snake(snake)) continue;
+        if (non_palindrome && snake == flip_snake(snake)) continue;
 
         SolutionList *list = solution_tree_get(tree, snake);
         if (list == NULL) continue;
@@ -896,7 +893,7 @@ void report_command(bool palindrome, bool not_palindrome) {
     for (Snake snake = 0; snake <= SNAKE_MAX; snake++) {
         if (!snake_valid(snake)) continue;
         if (palindrome && snake != flip_snake(snake)) continue;
-        if (not_palindrome && snake == flip_snake(snake)) continue;
+        if (non_palindrome && snake == flip_snake(snake)) continue;
 
         SolutionList *list = solution_tree_get(tree, snake);
         if (list == NULL) continue;
@@ -916,48 +913,70 @@ void report_command(bool palindrome, bool not_palindrome) {
         table[(max_straights + 3) * (max_solutions + 2) + (max_straights + 2)] += solution_count;
     }
 
-    printf("       ");
+    printf("|Solutions");
     for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
         if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
-        printf("% 7d", straight_count);
+        printf("|%d", straight_count);
     }
-    printf(" Snakes");
-    printf("  Total");
-    printf("\n");
+    printf("|Total Snakes");
+    printf("|Total Solutions");
+    printf("|\n");
+
+    printf("|-:");
+    for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
+        if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
+        printf("|-:");
+    }
+    printf("|-:");
+    printf("|-:");
+    printf("|\n");
 
     for (size_t solution_count = 0; solution_count <= max_solutions; solution_count++) {
         if (table[(max_straights + 3) * solution_count + (max_straights + 1)] == 0) continue;
-        printf("% 7d", (int)solution_count);
+        printf("|%d", (int)solution_count);
 
         for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
             if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
-            printf("% 7d", table[(max_straights + 3) * solution_count + straight_count]);
+            printf("|%d", table[(max_straights + 3) * solution_count + straight_count]);
         }
-        printf("% 7d", table[(max_straights + 3) * solution_count + (max_straights + 1)]);
-        printf("% 7d", table[(max_straights + 3) * solution_count + (max_straights + 2)]);
-        printf("\n");
+        printf("|%d", table[(max_straights + 3) * solution_count + (max_straights + 1)]);
+        printf("|%d", table[(max_straights + 3) * solution_count + (max_straights + 2)]);
+        printf("|\n");
     }
 
-    printf(" Snakes");
+    printf("|Total Snakes");
     for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
         if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
-        printf("% 7d", table[(max_straights + 3) * (max_solutions + 1) + straight_count]);
+        printf("|%d", table[(max_straights + 3) * (max_solutions + 1) + straight_count]);
     }
-    printf("% 7d", table[(max_straights + 3) * (max_solutions + 1) + (max_straights + 1)]);
-    printf("      -");
-    printf("\n");
+    printf("|%d", table[(max_straights + 3) * (max_solutions + 1) + (max_straights + 1)]);
+    printf("|-");
+    printf("|\n");
 
-    printf("  Total");
+    printf("|Total Solutions");
     for (int straight_count = 0; straight_count <= max_straights; straight_count++) {
         if (table[(max_straights + 3) * (max_solutions + 1) + straight_count] == 0) continue;
-        printf("% 7d", table[(max_straights + 3) * (max_solutions + 2) + straight_count]);
+        printf("|%d", table[(max_straights + 3) * (max_solutions + 2) + straight_count]);
     }
-    printf("      -");
-    printf("% 7d", table[(max_straights + 3) * (max_solutions + 2) + (max_straights + 2)]);
-    printf("\n");
+    printf("|-");
+    printf("|%d", table[(max_straights + 3) * (max_solutions + 2) + (max_straights + 2)]);
+    printf("|\n");
+
+    free(table);
+}
+
+void report_command(void) {
+    SolutionTree *tree = NULL;
+    fill_grid(&tree);
+
+    printf("# All\n\n");
+    print_table(tree, false, false);
+    printf("\n# None palindromic\n\n");
+    print_table(tree, false, true);
+    printf("\n# Palindromic\n\n");
+    print_table(tree, true, false);
 
     free_solution_tree(&tree);
-    free(table);
 }
 
 void usage(const char *program) {
@@ -982,12 +1001,7 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(argv[1], "compare") == 0) {
         compare_command();
     } else if (strcmp(argv[1], "report") == 0) {
-        printf("# All\n\n");
-        report_command(false, false);
-        printf("\n# None palindromic\n\n");
-        report_command(false, true);
-        printf("\n# Palindromic\n\n");
-        report_command(true, false);
+        report_command();
     } else {
         fprintf(stderr, "ERROR: unkown command '%s'\n", argv[1]);
         usage(argv[0]);
